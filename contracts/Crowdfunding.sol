@@ -61,4 +61,26 @@ contract Crowdfunding {
         nextCampaignId = id + 1;
         emit CampaignCreated(id, msg.sender, goal);
     }
+
+    mapping(uint256 => uint256) public totalRaised;
+    mapping(uint256 => mapping(address => uint256)) public contributions;
+    
+    error CampaignNotFound(uint256 id);
+    error FundingClosed(uint256 id);
+    error EmptyPledge();
+
+    event Pledged(uint256 indexed id, address indexed backer, uint256 amount);
+
+    function pledge(uint256 id) external payable {
+        Campaign storage campaign = campaigns[id];
+
+        if (campaign.creator == address(0)) revert CampaignNotFound(id);
+        if (block.timestamp >= campaign.fundingDeadline) revert FundingClosed(id);
+        if (msg.value == 0) revert EmptyPledge();
+
+        contributions[id][msg.sender] += msg.value;
+        totalRaised[id] += msg.value;
+
+        emit Pledged(id, msg.sender, msg.value);
+    }
 }
