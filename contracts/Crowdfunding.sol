@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.20;
+
+contract Crowdfunding {
+    uint256 private constant TOTAL_SHARE_BPS = 10_000;
+
+    struct Campaign {
+        address creator;
+        uint256 goal;
+        uint256 fundingDeadline;
+        bytes32 descriptionHash;
+    }
+
+    struct Milestone {
+        uint256 shareBps;
+        uint256 dueDate;
+    }
+
+    error InvalidGoal();
+    error InvalidFundingDeadline();
+    error InvalidMilestoneArrays();
+    error InvalidMilestoneShare(uint256 index);
+    error InvalidMilestoneDueDate(uint256 index);
+    error InvalidTotalShare(uint256 total);
+
+    event CampaignCreated(uint256 indexed id, address indexed creator, uint256 goal);
+
+    uint256 public nextCampaignId = 1;
+    mapping(uint256 => Campaign) public campaigns;
+    mapping(uint256 => Milestone[]) public milestones;
+
+    function createCampaign(
+        uint256 goal,
+        uint256 deadline,
+        uint256[] calldata shares,
+        uint256[] calldata dueDates,
+        bytes32 descHash
+    ) external returns (uint256 id) {
+        if (goal == 0) revert InvalidGoal();
+        if (deadline <= block.timestamp) revert InvalidFundingDeadline();
+        if (shares.length == 0 || shares.length != dueDates.length) {
+            revert InvalidMilestoneArrays();
+        }
+
+        id = nextCampaignId;
+        uint256 totalShare;
+        uint256 previousDueDate = deadline;
+        for (uint256 i = 0; i < shares.length; i++) {
+            uint256 share = shares[i];
+            uint256 dueDate = dueDates[i];
+            if (share == 0 || share > TOTAL_SHARE_BPS) revert InvalidMilestoneShare(i);
+            if (dueDate <= previousDueDate) revert InvalidMilestoneDueDate(i);
+
+            totalShare += share;
+            previousDueDate = dueDate;
+            milestones[id].push(Milestone(share, dueDate));
+        }
+        if (totalShare != TOTAL_SHARE_BPS) revert InvalidTotalShare(totalShare);
+
+        campaigns[id] = Campaign(msg.sender, goal, deadline, descHash);
+        nextCampaignId = id + 1;
+        emit CampaignCreated(id, msg.sender, goal);
+    }
+}
