@@ -166,7 +166,7 @@ contract Crowdfunding is ReentrancyGuard {
         if (fundingStatus[id] != FundingStatus.Funded) {
             revert CampaignNotFunded(id);
         }
-        
+
         if (campaignCancelled[id]) revert CampaignAlreadyCancelled(id);
         if (milestoneApproved[id]) revert MilestoneAlreadyApproved(id);
 
@@ -270,6 +270,49 @@ contract Crowdfunding is ReentrancyGuard {
             campaignCancelled[id] = true;
             emit CampaignCancelled(id);
         }
+    }
+
+    mapping(uint256 => uint256) public totalReleased;
+
+    error MilestoneNotApproved(uint256 id);
+    error PayoutTransferFailed();
+
+    event FundsReleased(
+        uint256 indexed id,
+        uint256 indexed milestoneIndex,
+        uint256 amount
+    );
+
+    function withdrawMilestone(uint256 id) external nonReentrant {
+        Campaign storage campaign = campaigns[id];
+
+        if (campaign.creator == address(0)) revert CampaignNotFound(id);
+        if (msg.sender != campaign.creator) revert NotCampaignCreator(id);
+        if (campaignCancelled[id]) revert CampaignAlreadyCancelled(id);
+        if (!milestoneApproved[id]) revert MilestoneNotApproved(id);
+
+        uint256 index = currentMilestone[id];
+        uint256 raised = totalRaised[id];
+        uint256 amount;
+
+        if (index + 1 == milestones[id].length) {
+            // Give the final milestone any wei left over from rounding.
+            amount = raised - totalReleased[id];
+        } else {
+            amount = raised * milestones[id][index].shareBps / TOTAL_SHARE_BPS;
+        }
+
+        milestoneApproved[id] = false;
+        milestoneRejections[id] = 0;
+        currentMilestone[id] = index + 1;
+        totalReleased[id] += amount;
+
+        if (amount != 0) {
+            (bool success, ) = payable(campaign.creator).call{value: amount}("");
+            if (!success) revert PayoutTransferFailed();
+        }
+
+        emit FundsReleased(id, index, amount);
     }
 }
 
