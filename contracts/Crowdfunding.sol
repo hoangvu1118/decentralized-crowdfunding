@@ -83,4 +83,39 @@ contract Crowdfunding {
 
         emit Pledged(id, msg.sender, msg.value);
     }
+    
+    enum FundingStatus {
+        Pending,
+        Funded,
+        Failed
+    }
+
+    mapping(uint256 => FundingStatus) public fundingStatus;
+
+    error FundingStillOpen(uint256 id);
+    error FundingAlreadySettled(uint256 id);
+
+    event FundingSettled(
+        uint256 indexed id,
+        FundingStatus status,
+        uint256 raised
+    );
+
+    function settleFunding(uint256 id) external {
+        Campaign storage campaign = campaigns[id];
+
+        if (campaign.creator == address(0)) revert CampaignNotFound(id);
+        if (block.timestamp < campaign.fundingDeadline) revert FundingStillOpen(id);
+        if (fundingStatus[id] != FundingStatus.Pending) {
+            revert FundingAlreadySettled(id);
+        }
+
+        uint256 raised = totalRaised[id];
+        FundingStatus result = raised >= campaign.goal
+            ? FundingStatus.Funded
+            : FundingStatus.Failed;
+
+        fundingStatus[id] = result;
+        emit FundingSettled(id, result, raised);
+    }
 }
