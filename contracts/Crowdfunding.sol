@@ -166,6 +166,9 @@ contract Crowdfunding is ReentrancyGuard {
         if (fundingStatus[id] != FundingStatus.Funded) {
             revert CampaignNotFunded(id);
         }
+        
+        if (campaignCancelled[id]) revert CampaignAlreadyCancelled(id);
+        if (milestoneApproved[id]) revert MilestoneAlreadyApproved(id);
 
         uint256 index = currentMilestone[id];
         if (index >= milestones[id].length) revert NoMilestonesRemaining(id);
@@ -226,5 +229,47 @@ contract Crowdfunding is ReentrancyGuard {
         emit Voted(id, round, msg.sender, approve, weight);
     }
 
+    mapping(uint256 => bool) public milestoneApproved;
+    mapping(uint256 => uint256) public milestoneRejections;
+    mapping(uint256 => bool) public campaignCancelled;
+
+    error VoteStillOpen(uint256 id);
+    error MilestoneAlreadyApproved(uint256 id);
+    error CampaignAlreadyCancelled(uint256 id);
+
+    event MilestoneApproved(uint256 indexed id, uint256 indexed milestoneIndex);
+    event MilestoneRejected(uint256 indexed id, uint256 indexed milestoneIndex);
+    event CampaignCancelled(uint256 indexed id);
+
+    function finalizeVote(uint256 id) external {
+        uint256 deadline = votingDeadline[id];
+        if (deadline == 0) revert VotingNotOpen(id);
+        if (block.timestamp < deadline) revert VoteStillOpen(id);
+
+        uint256 index = currentMilestone[id];
+        VoteTally storage tally = voteTallies[id][votingRound[id]];
+
+        uint256 turnout = tally.yesWeight + tally.noWeight;
+        uint256 raised = totalRaised[id];
+
+        // Calculate 30% of the total, rounded up to a whole wei.
+        uint256 quorum = (raised / 10) * 3 + ((raised % 10) * 3 + 9) / 10;
+
+        votingDeadline[id] = 0;
+
+        if (turnout >= quorum && tally.yesWeight > tally.noWeight) {
+            milestoneApproved[id] = true;
+            emit MilestoneApproved(id, index);
+            return;
+        }
+
+        milestoneRejections[id] += 1;
+        emit MilestoneRejected(id, index);
+
+        if (milestoneRejections[id] == 2) {
+            campaignCancelled[id] = true;
+            emit CampaignCancelled(id);
+        }
+    }
 }
 
