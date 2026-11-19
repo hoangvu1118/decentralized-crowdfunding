@@ -176,8 +176,54 @@ contract Crowdfunding is ReentrancyGuard {
 
         uint256 deadline = block.timestamp + VOTING_PERIOD;
         votingDeadline[id] = deadline;
+        votingRound[id] += 1;
 
         emit MilestoneSubmitted(id, index, deadline);
+        }
+
+        struct VoteTally {
+        uint256 yesWeight;
+        uint256 noWeight;
+        }
+
+        mapping(uint256 => uint256) public votingRound;
+        mapping(uint256 => mapping(uint256 => VoteTally)) public voteTallies;
+        mapping(uint256 => mapping(uint256 => mapping(address => bool))) public hasVoted;
+
+        error VotingNotOpen(uint256 id);
+        error NotABacker(uint256 id);
+        error AlreadyVoted(uint256 id);
+
+        event Voted(
+            uint256 indexed id,
+            uint256 indexed round,
+            address indexed backer,
+            bool approve,
+            uint256 weight
+        );
+
+        function vote(uint256 id, bool approve) external {
+        uint256 deadline = votingDeadline[id];
+        if (deadline == 0 || block.timestamp >= deadline) {
+            revert VotingNotOpen(id);
+        }
+
+        uint256 weight = contributions[id][msg.sender];
+        if (weight == 0) revert NotABacker(id);
+
+        uint256 round = votingRound[id];
+        if (hasVoted[id][round][msg.sender]) revert AlreadyVoted(id);
+
+        hasVoted[id][round][msg.sender] = true;
+
+        VoteTally storage tally = voteTallies[id][round];
+        if (approve) {
+            tally.yesWeight += weight;
+        } else {
+            tally.noWeight += weight;
+        }
+
+        emit Voted(id, round, msg.sender, approve, weight);
     }
 
 }
