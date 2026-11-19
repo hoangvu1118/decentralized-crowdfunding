@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract Crowdfunding {
     uint256 private constant TOTAL_SHARE_BPS = 10_000;
@@ -83,7 +84,7 @@ contract Crowdfunding {
 
         emit Pledged(id, msg.sender, msg.value);
     }
-    
+
     enum FundingStatus {
         Pending,
         Funded,
@@ -118,4 +119,27 @@ contract Crowdfunding {
         fundingStatus[id] = result;
         emit FundingSettled(id, result, raised);
     }
+
+    error CampaignNotFailed(uint256 id);
+    error NothingToRefund(uint256 id);
+    error RefundTransferFailed();
+
+    event Refunded(uint256 indexed id, address indexed backer, uint256 amount);
+
+    function claimRefund(uint256 id) external nonReentrant {
+        if (campaigns[id].creator == address(0)) revert CampaignNotFound(id);
+        if (fundingStatus[id] != FundingStatus.Failed) revert CampaignNotFailed(id);
+
+        uint256 amount = contributions[id][msg.sender];
+        if (amount == 0) revert NothingToRefund(id);
+
+        contributions[id][msg.sender] = 0;
+
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        if (!success) revert RefundTransferFailed();
+
+        emit Refunded(id, msg.sender, amount);
+    }
+    
 }
+
