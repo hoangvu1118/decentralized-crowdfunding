@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract Crowdfunding {
+contract Crowdfunding is ReentrancyGuard {
     uint256 private constant TOTAL_SHARE_BPS = 10_000;
 
     struct Campaign {
@@ -140,6 +140,45 @@ contract Crowdfunding {
 
         emit Refunded(id, msg.sender, amount);
     }
-    
+
+    uint256 public constant VOTING_PERIOD = 3 days;
+
+    mapping(uint256 => uint256) public currentMilestone;
+    mapping(uint256 => uint256) public votingDeadline;
+
+    error NotCampaignCreator(uint256 id);
+    error CampaignNotFunded(uint256 id);
+    error NoMilestonesRemaining(uint256 id);
+    error MilestoneOverdue(uint256 id, uint256 milestoneIndex);
+    error VoteAlreadyOpened(uint256 id);
+
+    event MilestoneSubmitted(
+        uint256 indexed id,
+        uint256 indexed milestoneIndex,
+        uint256 votingDeadline
+    );
+
+    function submitMilestone(uint256 id) external {
+        Campaign storage campaign = campaigns[id];
+
+        if (campaign.creator == address(0)) revert CampaignNotFound(id);
+        if (msg.sender != campaign.creator) revert NotCampaignCreator(id);
+        if (fundingStatus[id] != FundingStatus.Funded) {
+            revert CampaignNotFunded(id);
+        }
+
+        uint256 index = currentMilestone[id];
+        if (index >= milestones[id].length) revert NoMilestonesRemaining(id);
+        if (votingDeadline[id] != 0) revert VoteAlreadyOpened(id);
+        if (block.timestamp >= milestones[id][index].dueDate) {
+            revert MilestoneOverdue(id, index);
+        }
+
+        uint256 deadline = block.timestamp + VOTING_PERIOD;
+        votingDeadline[id] = deadline;
+
+        emit MilestoneSubmitted(id, index, deadline);
+    }
+
 }
 
