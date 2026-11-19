@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract Crowdfunding is ReentrancyGuard {
     uint256 private constant TOTAL_SHARE_BPS = 10_000;
@@ -334,5 +335,39 @@ contract Crowdfunding is ReentrancyGuard {
         campaignCancelled[id] = true;
         emit CampaignCancelled(id);
     }
+    mapping(uint256 => mapping(address => bool)) public remainingClaimed;
+
+    error CampaignNotCancelled(uint256 id);
+    error RemainingAlreadyClaimed(uint256 id);
+
+    event RemainingClaimed(
+        uint256 indexed id,
+        address indexed backer,
+        uint256 amount
+    );
+
+    function claimRemaining(uint256 id) external nonReentrant {
+        if (campaigns[id].creator == address(0)) revert CampaignNotFound(id);
+        if (!campaignCancelled[id]) revert CampaignNotCancelled(id);
+        if (remainingClaimed[id][msg.sender]) revert RemainingAlreadyClaimed(id);
+
+        uint256 contribution = contributions[id][msg.sender];
+        if (contribution == 0) revert NothingToRefund(id);
+
+        uint256 raised = totalRaised[id];
+        uint256 unreleased = raised - totalReleased[id];
+        uint256 amount = Math.mulDiv(contribution, unreleased, raised);
+
+        remainingClaimed[id][msg.sender] = true;
+
+        if (amount != 0) {
+            (bool success, ) = payable(msg.sender).call{value: amount}("");
+            if (!success) revert RefundTransferFailed();
+        }
+
+        emit RemainingClaimed(id, msg.sender, amount);
+    }
+
+    
 }
 
