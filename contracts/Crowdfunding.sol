@@ -314,5 +314,25 @@ contract Crowdfunding is ReentrancyGuard {
 
         emit FundsReleased(id, index, amount);
     }
+
+    error MilestoneNotOverdue(uint256 id, uint256 milestoneIndex);
+    error VoteAwaitingFinalization(uint256 id);
+
+    function cancelOverdue(uint256 id) external {
+        if (campaigns[id].creator == address(0)) revert CampaignNotFound(id);
+        if (fundingStatus[id] != FundingStatus.Funded) revert CampaignNotFunded(id);
+        if (campaignCancelled[id]) revert CampaignAlreadyCancelled(id);
+
+        uint256 index = currentMilestone[id];
+        if (index >= milestones[id].length) revert NoMilestonesRemaining(id);
+        if (milestoneApproved[id]) revert MilestoneAlreadyApproved(id);
+        if (votingDeadline[id] != 0) revert VoteAwaitingFinalization(id);
+        if (block.timestamp < milestones[id][index].dueDate) {
+            revert MilestoneNotOverdue(id, index);
+        }
+
+        campaignCancelled[id] = true;
+        emit CampaignCancelled(id);
+    }
 }
 
